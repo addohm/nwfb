@@ -4,6 +4,7 @@ models
 data
 *.pkl
 *.pth
-assets/*
+assets/images/*
+assets/video/*
 env/*
 test*.py

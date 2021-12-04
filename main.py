@@ -1,7 +1,9 @@
 from time import sleep
 from random import uniform
+import threading
 import pydirectinput
 import cv2
+from playsound import playsound
 from ctypes import windll
 from numpy import array
 from PIL import ImageGrab, Image
@@ -23,6 +25,7 @@ afk_status = False
 mouse_status = False
 moved_mouse = [0,0]
 pause = True
+last_str = ''
 states = [
     {   
         'status': 'hook',
@@ -72,6 +75,15 @@ compass = {
         'image': 'templates/color_map_pin.png',
         'location': (0,0),
 }
+
+def state_update(str):
+    global last_str
+    if str != last_str:
+        print(str)
+        last_str = str
+        
+def play_sound():
+    playsound('assets/audio/ding-sound-effect_2.mp3')
 
 def get_new_haystack():
     ''' Fetches screen cap and crops out the main window, the compass, and the afk area'''
@@ -125,6 +137,7 @@ def convert_image(img):
 
 def compass_before(comp):
     ''' Capture the compass data before the process '''
+    global compass
     # # Crop out the compass [t:b,l:r]
     compass['before'] = comp
     needle = Image.open(compass['image'])
@@ -137,6 +150,7 @@ def compass_before(comp):
 
 def compass_after(comp):
     ''' Capture the compass data after the process '''
+    global compass
     # # Crop out the compass [t:b,l:r]
     compass['after'] = comp
     needle = Image.open(compass['image'])
@@ -149,6 +163,7 @@ def compass_after(comp):
 
 def check_afk(haystack):
     ''' Check to see if afk status window popped up '''
+    global afk
     needle = Image.open(afk['template'])
     needle = convert_image(needle)
     (minVal, maxVal, minLoc, maxLoc) = find_needle_in_haystack(haystack, needle)
@@ -169,6 +184,7 @@ def break_afk():
 
 def check_compass_position(comp):
     ''' Returns True if compass position changes, otherwise False '''
+    global compass
 
     compass_after(comp)
 
@@ -187,13 +203,14 @@ def check_compass_position(comp):
 
 def return_camera_position():
     ''' Moves the mouse up and to the right until the camera position meets threshold '''
+    global moved_mouse
     while True:
-        haystack, comp, afk = get_new_haystack()
+        _, comp, _ = get_new_haystack()
         compass_position = check_compass_position(comp)
         if compass_position:
             c = GetKeyState(CTRL)
             if c >= 0:
-                print("Moving mouse...")
+                state_update("Moving mouse...")
                 pydirectinput.moveRel(MOUSE_SHIFT[0],MOUSE_SHIFT[1],relative=True)
                 moved_mouse[0] += MOUSE_SHIFT[0]
                 moved_mouse[1] += MOUSE_SHIFT[1]
@@ -201,34 +218,38 @@ def return_camera_position():
         else:
             break
 
-def take_action(state):#, rand_x, rand_y):
+def take_action(state):
     if state == "hook":
-        print("Got one!")
+        state_update("Got one!")
         pydirectinput.click()
     elif state == "cast":
         c = GetKeyState(LMB)
         if c < 0:
             pydirectinput.mouseUp()
         else:
-            print("Casting...")
+            state_update("Casting...")
             duration = uniform(1.7,1.95)
             pydirectinput.mouseDown()
             sleep(duration)
             pydirectinput.mouseUp()
     elif state == "reel bad":
-        print("Letting off...")
+        state_update("Letting off...")
         pydirectinput.mouseUp()
     elif state == "reel good":
-        print("Reeling it in...")
+        state_update("Reeling it in...")
         c = GetKeyState(LMB)
         if c >= 0:
             pydirectinput.mouseDown()
     elif state == "bobber":
-        print("Waiting for a bite...")
+        state_update("Waiting for a bite...")
     elif state == "afk":
-        print("AFK Detection, doing the jimmy shimmy.")
+        state_update("AFK Detection, doing the jimmy shimmy.")
     elif state == "camera":
-        print("Camera moved.  Repositioning...")
+        state_update("Camera moved.  Repositioning...")
+
+state_update("Paused.")
+x = threading.Thread(target=play_sound)
+x.start()
 
 # Make program aware of DPI scaling
 user32 = windll.user32
@@ -246,15 +267,19 @@ while True:
     c = GetKeyState(F9)
     if c < 0:
         if not pause:
-            print("Paused.")
+            state_update("Paused.")
             pause = True
-            sleep(5)
+            x = threading.Thread(target=play_sound)
+            x.start()
+            sleep(2)
         else:
-            print("Resuming in 5 seconds...")
+            state_update("Resuming in 2 seconds...")
             pause = False
-            sleep(5)
+            x = threading.Thread(target=play_sound)
+            x.start()
+            sleep(2)
             # Refresh the stored compass
-            compass_before(comp_base)
+            first_pass = True
             
     if not pause:
         # window = FindWindow(None, WINDOW_NAME)
@@ -308,7 +333,7 @@ while True:
             if states[max_index]['result'] > states[max_index]['threshold']:
                 if states[max_index]['status'] == 'reel': compass_before(comp_base)
                 if states[max_index]['status'] == 'cast':
-                    print('Checking to see if compass shifted...')
+                    state_update('Checking to see if compass shifted...')
                     compass_position = check_compass_position(comp_base)
                     if not compass_position:
                         if VERBOSE: print("Camera hasn't moved.")
@@ -317,25 +342,20 @@ while True:
                         mouse_status = True
                         return_camera_position()
                     if mouse_status:
-                        print(f"Mouse moved X: {moved_mouse[0]} and Y: {moved_mouse[1]}.")
+                        if VERBOSE: print(f"Mouse moved X: {moved_mouse[0]} and Y: {moved_mouse[1]}.")
                         moved_mouse = [0,0]
                         mouse_status = False
                     if afk_status:
-                        print('AFK Timer has started.  Moving to break it...')
+                        state_update('AFK Timer has started.  Moving to break it...')
                         break_afk()
-                # mouserangex = randrange(bb_l, bb_r)
-                # mouserangey = randrange(bb_t, bb_b)
-                take_action(states[max_index]['status'])#, mouserangex, mouserangey)
+
+                take_action(states[max_index]['status'])
                 if VERBOSE: print(f"Status -> {states[max_index]['status']} {str(states[max_index]['result'])[:4]}:{states[max_index]['threshold']}".format(status,certainty,threshold))
             else:
-                print(f"No Status! Best guess is {states[max_index]['status']} - {str(states[max_index]['result'])[:4]}:{states[max_index]['threshold']}".format(status,certainty,threshold))
+                if not VERBOSE: state_update("Thinking...")
+                if VERBOSE: state_update(f"No Status! Best guess is {states[max_index]['status']} - {str(states[max_index]['result'])[:4]}:{states[max_index]['threshold']}".format(status,certainty,threshold))
         else:
-            print(f"Select the {WINDOW_NAME} window.")
+            state_update(f"Select the {WINDOW_NAME} window.")
 
         if DEBUG:
             key = cv2.waitKey(1)
-
-
-# cv2.imwrite('afk.jpg', afk)
-# plt.imshow(afk)
-# plt.show()

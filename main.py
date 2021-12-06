@@ -1,14 +1,20 @@
 from time import sleep
-from random import uniform
+from random import randint, uniform
 import threading
+from typing import cast
 import pydirectinput
 import cv2
+import argparse
 from playsound import playsound
 from ctypes import windll
 from numpy import array
 from PIL import ImageGrab, Image
 from win32gui import GetForegroundWindow, GetWindowText, GetWindowRect
 from win32api import GetKeyState
+
+parser = argparse.ArgumentParser()
+parser.add_argument("-c", "--cast", dest='cast_time', help = "Cast release delay")
+args = parser.parse_args()
 
 WINDOW_NAME = "New World"
 VERBOSE = False
@@ -19,6 +25,7 @@ AFK_BOX = (0.705, 0.035, .96, 0.175) # L T R B
 MOUSE_SHIFT = (26, -13)
 LMB = 0x01 # https://docs.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes
 CTRL = 0x11 # https://docs.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes
+F8 = 0x77 # https://docs.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes
 F9 = 0x78 # https://docs.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes
 first_pass = True
 afk_status = False
@@ -26,6 +33,12 @@ mouse_status = False
 moved_mouse = [0,0]
 pause = True
 last_str = ''
+cast_time = uniform(1.7,1.95)
+
+# Make program aware of DPI scaling
+user32 = windll.user32
+user32.SetProcessDPIAware()
+
 states = [
     {   
         'status': 'hook',
@@ -175,12 +188,20 @@ def check_afk(haystack):
         return False
 
 def break_afk():
-    pydirectinput.keyDown('s')
-    sleep(0.1)
-    pydirectinput.keyUp('s')
-    pydirectinput.keyDown('w')
-    sleep(0.1)
-    pydirectinput.keyUp('w')
+    if randint(1, 2) == 1:
+        pydirectinput.keyDown('s')
+        sleep(0.1)
+        pydirectinput.keyUp('s')
+        pydirectinput.keyDown('w')
+        sleep(0.1)
+        pydirectinput.keyUp('w')
+    else:
+        pydirectinput.keyDown('a')
+        sleep(0.1)
+        pydirectinput.keyUp('a')
+        pydirectinput.keyDown('d')
+        sleep(0.1)
+        pydirectinput.keyUp('d')
 
 def check_compass_position(comp):
     ''' Returns True if compass position changes, otherwise False '''
@@ -227,10 +248,13 @@ def take_action(state):
         if c < 0:
             pydirectinput.mouseUp()
         else:
+            if args.cast_time:
+                cast_time = float(args.cast_time)
+            else:
+                cast_time = uniform(1.7,1.95)
             state_update("Casting...")
-            duration = uniform(1.7,1.95)
             pydirectinput.mouseDown()
-            sleep(duration)
+            sleep(cast_time)
             pydirectinput.mouseUp()
     elif state == "reel bad":
         state_update("Letting off...")
@@ -251,10 +275,6 @@ state_update("Paused.")
 x = threading.Thread(target=play_sound)
 x.start()
 
-# Make program aware of DPI scaling
-user32 = windll.user32
-user32.SetProcessDPIAware()
-
 if DEBUG:
     cv2.namedWindow('Main Window')
     cv2.namedWindow('Compass')
@@ -263,9 +283,14 @@ if DEBUG:
     cv2.namedWindow('After')
 
 while True:
+    q = GetKeyState(F8)
+    if q < 0:
+        print('Quitting.')
+        break
+
     # Pause Logic
-    c = GetKeyState(F9)
-    if c < 0:
+    p = GetKeyState(F9)
+    if p < 0:
         if not pause:
             state_update("Paused.")
             pause = True

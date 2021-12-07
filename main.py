@@ -1,3 +1,4 @@
+from os import stat
 from time import sleep
 from random import randint, uniform
 import threading
@@ -27,13 +28,15 @@ LMB = 0x01 # https://docs.microsoft.com/en-us/windows/win32/inputdev/virtual-key
 CTRL = 0x11 # https://docs.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes
 F8 = 0x77 # https://docs.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes
 F9 = 0x78 # https://docs.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes
+F5 = 0x74
 first_pass = True
 afk_status = False
 mouse_status = False
 moved_mouse = [0,0]
 pause = True
 last_str = ''
-cast_time = uniform(1.7,1.95)
+manual_set_cast_time = False
+manual_cast_time = 0.0
 
 # Make program aware of DPI scaling
 user32 = windll.user32
@@ -88,6 +91,20 @@ compass = {
         'image': 'templates/color_map_pin.png',
         'location': (0,0),
 }
+
+def get_cast_time():
+    global manual_set_cast_time
+    global manual_cast_time
+
+    if manual_set_cast_time is True:
+        cast_time = manual_cast_time
+    elif args.cast_time:
+        cast_time = float(args.cast_time)
+    else:
+        cast_time = uniform(1.7,1.95)
+
+    if VERBOSE: print(f"Cast time: {str(cast_time)}")
+    return cast_time
 
 def state_update(str):
     global last_str
@@ -247,15 +264,11 @@ def take_action(state):
         c = GetKeyState(LMB)
         if c < 0:
             pydirectinput.mouseUp()
-        else:
-            if args.cast_time:
-                cast_time = float(args.cast_time)
-            else:
-                cast_time = uniform(1.7,1.95)
-            state_update("Casting...")
-            pydirectinput.mouseDown()
-            sleep(cast_time)
-            pydirectinput.mouseUp()
+        cast_time = get_cast_time()
+        state_update("Casting...")
+        pydirectinput.mouseDown()
+        sleep(cast_time)
+        pydirectinput.mouseUp()
     elif state == "reel bad":
         state_update("Letting off...")
         pydirectinput.mouseUp()
@@ -271,7 +284,12 @@ def take_action(state):
     elif state == "camera":
         state_update("Camera moved.  Repositioning...")
 
+state_update("DONT FORGET TO SET THE MAP PIN ACROSS FROM YOU.")
+state_update("Press F9 any time to start or pause.")
+state_update("Press F8 any time to quit.")
+state_update("Press F5 (while paused) to manually set cast time.")
 state_update("Paused.")
+
 x = threading.Thread(target=play_sound)
 x.start()
 
@@ -283,14 +301,12 @@ if DEBUG:
     cv2.namedWindow('After')
 
 while True:
-    q = GetKeyState(F8)
-    if q < 0:
-        print('Quitting.')
-        break
+    f9 = GetKeyState(F9) # Pause
+    f8 = GetKeyState(F8) # Quit
+    f5 = GetKeyState(F5) # Manual cast time
 
     # Pause Logic
-    p = GetKeyState(F9)
-    if p < 0:
+    if f9 < 0:
         if not pause:
             state_update("Paused.")
             pause = True
@@ -305,7 +321,18 @@ while True:
             sleep(2)
             # Refresh the stored compass
             first_pass = True
-            
+
+    if pause and f5 < 0:
+        if manual_set_cast_time:
+            state_update(f"Your previous cast time was set to {manual_cast_time}.")
+        manual_cast_time = float(input("Enter new cast time in seconds (S.ss): "))
+        manual_set_cast_time = True
+        print(f"New cast time set to {manual_cast_time}.  Press F9 to resume...")
+
+    if f8 < 0:
+        print('Quitting.')
+        break
+
     if not pause:
         # window = FindWindow(None, WINDOW_NAME)
         window = GetForegroundWindow()
